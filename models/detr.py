@@ -32,11 +32,11 @@ class DETR(nn.Module):
         """
         super().__init__()
         self.num_queries = num_queries
-        self.transformer = transformer
         hidden_dim = transformer.d_model
-        self.vocab_embed = MLP(hidden_dim, hidden_dim, 2003, 3)
-        self.input_proj = nn.Conv2d(backbone.num_channels, hidden_dim, kernel_size=1)
         self.backbone = backbone
+        self.input_proj = nn.Conv2d(backbone.num_channels, hidden_dim, kernel_size=1)
+        self.transformer = transformer
+        self.vocab_embed = MLP(hidden_dim, hidden_dim, 2003, 3)
         self.aux_loss = aux_loss
 
     def forward(self, samples: NestedTensor, sequence):
