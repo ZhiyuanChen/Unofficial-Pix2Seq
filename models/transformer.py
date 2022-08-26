@@ -51,14 +51,14 @@ class Transformer(nn.Module):
 
     def __init__(self, d_model=512, nhead=8, num_encoder_layers=6,
                  num_decoder_layers=6, dim_feedforward=2048, dropout=0.1,
-                 activation="relu", normalize_before=False,
+                 activation="relu", normalize_before=True,
                  return_intermediate_dec=False):
         super().__init__()
         self.embedding = DecoderEmbeddings(2003, d_model, 2000, 500, dropout)
         encoder_layer = TransformerEncoderLayer(d_model, nhead, dim_feedforward,
                                                 dropout, activation, normalize_before)
-        # encoder_norm = nn.LayerNorm(d_model) if normalize_before else None
-        encoder_norm = None
+        encoder_norm = nn.LayerNorm(d_model) if normalize_before else None
+        # encoder_norm = None
         self.encoder = TransformerEncoder(encoder_layer, num_encoder_layers, encoder_norm)
 
         decoder_layer = TransformerDecoderLayer(d_model, nhead, dim_feedforward,
