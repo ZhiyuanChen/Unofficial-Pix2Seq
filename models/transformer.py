@@ -57,12 +57,13 @@ class Transformer(nn.Module):
         self.embedding = DecoderEmbeddings(2003, d_model, 2000, 500, dropout)
         encoder_layer = TransformerEncoderLayer(d_model, nhead, dim_feedforward,
                                                 dropout, activation, normalize_before)
-        encoder_norm = nn.LayerNorm(d_model) if normalize_before else None
+        # encoder_norm = nn.LayerNorm(d_model) if normalize_before else None
+        encoder_norm = None
         self.encoder = TransformerEncoder(encoder_layer, num_encoder_layers, encoder_norm)
 
         decoder_layer = TransformerDecoderLayer(d_model, nhead, dim_feedforward,
                                                 dropout, activation, normalize_before)
-        decoder_norm = nn.LayerNorm(d_model)
+        decoder_norm = nn.LayerNorm(d_model) if normalize_before else None
         self.decoder = TransformerDecoder(decoder_layer, num_decoder_layers, decoder_norm,
                                           return_intermediate=return_intermediate_dec)
 
