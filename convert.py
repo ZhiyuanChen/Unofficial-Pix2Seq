@@ -141,7 +141,7 @@ def convert(tf_ckpt_path):
             state_dict[rename(name)] = array
     state_dict = adjust(state_dict)
 
-    return state_dict
+    return OrderedDict(model=state_dict)
 
 
 if __name__ == "__main__":
