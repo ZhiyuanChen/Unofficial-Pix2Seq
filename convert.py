@@ -122,7 +122,7 @@ def adjust(state_dict):
     return torch_dict
 
 
-def convert(model, tf_ckpt_path):
+def convert(tf_ckpt_path):
     """Load tf checkpoints in a pytorch model."""
     tf_ckpt_path = os.path.abspath(tf_ckpt_path)
     print("Converting TensorFlow checkpoint from {}".format(tf_ckpt_path))
@@ -141,9 +141,11 @@ def convert(model, tf_ckpt_path):
             state_dict[rename(name)] = array
     state_dict = adjust(state_dict)
 
-    model.load_state_dict(state_dict)
-    return model
+    return state_dict
 
 
 if __name__ == "__main__":
-    convert(torch.load("model.pth"), "checkpoints/resnet_640x640/ckpt-74844")
+    torch.save(
+        convert("checkpoints/tensorflow/resnet_640x640/ckpt-74844"),
+        "checkpoints/pytorch/resnet_640x640/ckpt-74844.pth",
+    )
