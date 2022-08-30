@@ -34,7 +34,7 @@ def train_one_epoch(
     print_freq = 10
     for samples, targets in metric_logger.log_every(data_loader, print_freq, header):
         # (x1 y1 x2 y2 label) * max_box + EOS
-        max_seq_length = max([len(target["boxes"]) for target in targets]) * 5 + 1
+        max_seq_len = max([len(target["boxes"]) for target in targets]) * 5 + 1
         samples = samples.to(device)
         targets = [{k: v.to(device) for k, v in t.items()} for t in targets]
         bins = 1000
@@ -53,9 +53,9 @@ def train_one_epoch(
             box_label = torch.cat(
                 [box_label.flatten(), torch.ones(1).to(box_label) * end]
             )
-            if max_seq_length > len(box_label):
+            if max_seq_len > len(box_label):
                 pad_seq = (
-                    torch.ones(max_seq_length - len(box_label)).to(box_label) * padding
+                    torch.ones(max_seq_len - len(box_label)).to(box_label) * padding
                 )
                 box_label = torch.cat([box_label, pad_seq])
             box_labels.append(box_label.unsqueeze(0))

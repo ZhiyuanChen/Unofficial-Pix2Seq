@@ -10,6 +10,9 @@ from einops import rearrange
 
 def rename(name):
     name = name.replace("/", ".")
+    name = name.replace("dense", "linear")
+    name = name.replace("ln", "norm")
+    name = name.replace("embedding", "embed")
     name = name.replace("kernel", "weight")
     name = name.replace("gamma", "weight")
     name = name.replace("output_weight", "weight")
@@ -21,9 +24,9 @@ def rename(name):
     # process resnet
     if name.startswith("model.encoder.resnet"):
         name = name.replace("model.encoder.resnet", "backbone")
-        name = name.replace("block_groups.", "0.body.layer")
-        name = name.replace("initial_conv_relu_max_pool.2.bn", "0.body.bn1")
-        name = name.replace("initial_conv_relu_max_pool.0.conv2d", "0.body.conv1")
+        name = name.replace("block_groups.", "body.layer")
+        name = name.replace("initial_conv_relu_max_pool.2.bn", "body.bn1")
+        name = name.replace("initial_conv_relu_max_pool.0.conv2d", "body.conv1")
         name = name.replace("layers.", "")
         name = name.replace("layer3", "layer4").replace("layer2", "layer3")
         name = name.replace("layer1", "layer2").replace("layer0", "layer1")
@@ -39,31 +42,38 @@ def rename(name):
         name = name.replace("projection_", "downsample.")
         name = name.replace("downsample.0.conv2d", "downsample.0")
         name = name.replace("downsample.1.bn", "downsample.1")
+    if name.startswith("model.proj"):
+        name = name.replace("model", "transformer")
+    if name.startswith("model.encoder.stem"):
+        name = name.replace("model.encoder.", "")
+        name = name.replace("projection", "proj")
     # process transformer encoder
     if name.startswith("model.encoder.transformer_encoder"):
         name = name.replace("model.encoder.transformer_encoder", "transformer.encoder")
         name = name.replace("enc_layers", "layers")
         name = name.replace("mha", "self_attn")
-        name = name.replace("self_attn_ln", "norm1")
-        name = name.replace("layernorms.0", "norm2")
     # process transformer decoder
     if name.startswith("model.decoder.decoder"):
         name = name.replace("model.decoder", "transformer")
         name = name.replace("dec_layers", "layers")
         name = name.replace("self_mha", "self_attn")
-        name = name.replace("cross_mha", "multihead_attn")
-        name = name.replace("self_ln", "norm1")
-        name = name.replace("cross_ln", "norm2")
-        name = name.replace("layernorms.0", "norm3")
+        name = name.replace("cross_mha", "cross_attn")
     # process transformer in general
     if "transformer" in name:
-        name = name.replace("mlp.", "")
+        name = name.replace("ffn.", "")
         name = name.replace("mlp_layers.0.", "")
-        name = name.replace("dense", "linear")
+        name = name.replace("layernorms.0", "norm")
+        name = name.replace("self_attn_norm", "self_norm")
         name = name.replace("_output_linear", "out_proj")
-    if "output_ln" in name:
+    if "output_norm" in name:
         name = name.replace("model", "transformer")
-        name = name.replace("output_ln", "norm")
+        name = name.replace("output_", "")
+    if "ar_decoder" in name:
+        name = name.replace("model", "transformer")
+        name = name.replace("ar_decoder.S", "")
+        name = name.replace("seq_", "")
+        name = name.replace("inp", "input")
+        name = name.replace("outp", "output")
     return name
 
 
@@ -104,22 +114,28 @@ def adjust_proj(state_dict):
 
 
 def adjust_weight(state_dict):
-    for k, v in state_dict.items():
-        # if ('conv' in k or 'downsample' in k) and k.endswith('.weight'):
-        #     state_dict[k] = rearrange(v, 'w h i o -> o i h w')
-        if "weight" in k:
-            state_dict[k] = np.transpose(v)
+    state_dict = {
+        k: np.transpose(v) if "weight" in k else v for k, v in state_dict.items()
+    }
+    state_dict = {k: torch.from_numpy(v) for k, v in state_dict.items()}
+    if "transformer.decoder.token_embed" in state_dict:
+        state_dict["transformer.decoder.input_embed"] = state_dict[
+            "transformer.decoder.token_embed"
+        ]
+        state_dict["transformer.decoder.output_embed"] = state_dict[
+            "transformer.decoder.token_embed"
+        ]
+        del state_dict["transformer.decoder.token_embed"]
+    # state_dict["transformer.decoder.pos_embed"] = state_dict[
+    #    "transformer.decoder.pos_embed"
+    # ][None]
     return state_dict
 
 
 def adjust(state_dict):
     state_dict = adjust_proj(state_dict)
-    # state_dict = adjust_weight(state_dict)
-    state_dict = {
-        k: np.transpose(v) if "weight" in k else v for k, v in state_dict.items()
-    }
-    torch_dict = {k: torch.from_numpy(v) for k, v in state_dict.items()}
-    return torch_dict
+    state_dict = adjust_weight(state_dict)
+    return state_dict
 
 
 def convert(tf_ckpt_path):
@@ -128,7 +144,7 @@ def convert(tf_ckpt_path):
     print("Converting TensorFlow checkpoint from {}".format(tf_ckpt_path))
     # Load weights from TF model
     init_vars = tf.train.list_variables(tf_ckpt_path)
-    state_dict = OrderedDict()
+    state_dict = {}
     for name, shape in init_vars:
         if (
             "optimizer" not in name

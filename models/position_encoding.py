@@ -5,7 +5,8 @@ Various positional encodings for the transformer.
 import math
 
 import torch
-from torch import nn
+import torch.nn as nn
+from einops import rearrange
 
 from util.misc import NestedTensor
 
@@ -17,7 +18,7 @@ class PositionEmbeddingSine(nn.Module):
     """
 
     def __init__(
-        self, num_pos_feats=64, temperature=10000, normalize=False, scale=None
+        self, num_pos_feats=512, temperature=10000, normalize=False, scale=None
     ):
         super().__init__()
         self.num_pos_feats = num_pos_feats
@@ -29,9 +30,7 @@ class PositionEmbeddingSine(nn.Module):
             scale = 2 * math.pi
         self.scale = scale
 
-    def forward(self, tensor_list: NestedTensor):
-        x = tensor_list.tensors
-        mask = tensor_list.mask
+    def forward(self, x, mask):
         assert mask is not None
         not_mask = ~mask
         y_embed = not_mask.cumsum(1, dtype=torch.float32)
@@ -53,6 +52,7 @@ class PositionEmbeddingSine(nn.Module):
             (pos_y[:, :, :, 0::2].sin(), pos_y[:, :, :, 1::2].cos()), dim=4
         ).flatten(3)
         pos = torch.cat((pos_y, pos_x), dim=3).permute(0, 3, 1, 2)
+        pos = rearrange(pos, "b c h w -> b (h w) c")
         return pos
 
 
@@ -61,7 +61,7 @@ class PositionEmbeddingLearned(nn.Module):
     Absolute pos embedding, learned.
     """
 
-    def __init__(self, num_pos_feats=256):
+    def __init__(self, num_pos_feats=512):
         super().__init__()
         self.row_embed = nn.Embedding(50, num_pos_feats)
         self.col_embed = nn.Embedding(50, num_pos_feats)
@@ -71,8 +71,7 @@ class PositionEmbeddingLearned(nn.Module):
         nn.init.uniform_(self.row_embed.weight)
         nn.init.uniform_(self.col_embed.weight)
 
-    def forward(self, tensor_list: NestedTensor):
-        x = tensor_list.tensors
+    def forward(self, x, mask):
         h, w = x.shape[-2:]
         i = torch.arange(w, device=x.device)
         j = torch.arange(h, device=x.device)
@@ -90,17 +89,18 @@ class PositionEmbeddingLearned(nn.Module):
             .unsqueeze(0)
             .repeat(x.shape[0], 1, 1, 1)
         )
+        pos = rearrange(pos, "b c h w -> b (h w) c")
         return pos
 
 
 def build_position_encoding(args):
     N_steps = args.hidden_dim // 2
-    if args.position_embedding in ("v2", "sine"):
+    if args.pos_embed in ("v2", "sine"):
         # TODO find a better way of exposing other arguments
-        position_embedding = PositionEmbeddingSine(N_steps, normalize=True)
-    elif args.position_embedding in ("v3", "learned"):
-        position_embedding = PositionEmbeddingLearned(N_steps)
+        pos_embed = PositionEmbeddingSine(N_steps, normalize=True)
+    elif args.pos_embed in ("v3", "learned"):
+        pos_embed = PositionEmbeddingLearned(N_steps)
     else:
-        raise ValueError(f"not supported {args.position_embedding}")
+        raise ValueError(f"not supported {args.pos_embed}")
 
-    return position_embedding
+    return pos_embed

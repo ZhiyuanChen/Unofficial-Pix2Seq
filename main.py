@@ -27,6 +27,8 @@ def get_args_parser():
     parser.add_argument("--batch_size", default=128, type=int)
     parser.add_argument("--weight_decay", default=1e-4, type=float)
     parser.add_argument("--epochs", default=300, type=int)
+    parser.add_argument("--vocab_size", default=3000, type=int)
+    parser.add_argument("--max_seq_len", default=512, type=int)
     parser.add_argument("--lr_drop", default=200, type=int)
     parser.add_argument(
         "--clip_max_norm", default=0.1, type=float, help="gradient clipping max norm"
@@ -52,8 +54,15 @@ def get_args_parser():
         help="If true, we replace stride with dilation in the last convolutional block (DC5)",
     )
     parser.add_argument(
-        "--position_embedding",
+        "--pos_embed",
         default="sine",
+        type=str,
+        choices=("sine", "learned"),
+        help="Type of positional embedding to use on top of the image features",
+    )
+    parser.add_argument(
+        "--pos_embed_dec",
+        default="learned",
         type=str,
         choices=("sine", "learned"),
         help="Type of positional embedding to use on top of the image features",
@@ -84,8 +93,12 @@ def get_args_parser():
         type=int,
         help="Size of the embeddings (dimension of the transformer)",
     )
+    parser.add_argument("--dropout", default=0.1, type=float, help="Dropout")
     parser.add_argument(
-        "--dropout", default=0.1, type=float, help="Dropout applied in the transformer"
+        "--dropout_attn",
+        default=0.0,
+        type=float,
+        help="Dropout in attention",
     )
     parser.add_argument(
         "--nheads",
@@ -97,6 +110,9 @@ def get_args_parser():
         "--num_queries", default=100, type=int, help="Number of query slots"
     )
     parser.add_argument("--pre_norm", action="store_true", default=True)
+    parser.add_argument("--shared_embed", action="store_true", default=True)
+    parser.add_argument("--output_bias", action="store_true", default=True)
+    parser.add_argument("--use_cls_token", action="store_true")
 
     # * Segmentation
     parser.add_argument(

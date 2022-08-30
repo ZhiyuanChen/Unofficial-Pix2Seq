@@ -37,7 +37,7 @@ def get_args_parser():
         help="If true, we replace stride with dilation in the last convolutional block (DC5)",
     )
     parser.add_argument(
-        "--position_embedding",
+        "--pos_embed",
         default="sine",
         type=str,
         choices=("sine", "learned"),

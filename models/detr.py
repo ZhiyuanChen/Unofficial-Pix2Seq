@@ -5,25 +5,44 @@ DETR model and criterion classes.
 import pdb
 
 import torch
+import torch.nn as nn
 import torch.nn.functional as F
-from torch import nn
+from einops import rearrange
 
 from util import box_ops
-from util.misc import (NestedTensor, accuracy, get_world_size, interpolate,
-                       is_dist_avail_and_initialized,
-                       nested_tensor_from_tensor_list)
+from util.misc import (
+    NestedTensor,
+    accuracy,
+    get_world_size,
+    interpolate,
+    is_dist_avail_and_initialized,
+    nested_tensor_from_tensor_list,
+)
 
 from .backbone import build_backbone
 from .matcher import build_matcher
-from .segmentation import (DETRsegm, PostProcessPanoptic, PostProcessSegm,
-                           dice_loss, sigmoid_focal_loss)
+from .segmentation import (
+    DETRsegm,
+    PostProcessPanoptic,
+    PostProcessSegm,
+    dice_loss,
+    sigmoid_focal_loss,
+)
 from .transformer import build_transformer
 
 
 class DETR(nn.Module):
     """This is the DETR module that performs object detection"""
 
-    def __init__(self, backbone, transformer, num_classes, num_queries, aux_loss=False):
+    def __init__(
+        self,
+        backbone,
+        transformer,
+        num_classes,
+        num_queries,
+        dropout=0.1,
+        aux_loss=False,
+    ):
         """Initializes the model.
         Parameters:
             backbone: torch module of the backbone to be used. See backbone.py
@@ -37,9 +56,11 @@ class DETR(nn.Module):
         self.num_queries = num_queries
         hidden_dim = transformer.d_model
         self.backbone = backbone
-        self.input_proj = nn.Conv2d(backbone.num_channels, hidden_dim, kernel_size=1)
+        self.dropout = nn.Dropout(dropout)
+        # self.stem_proj = nn.Conv2d(backbone.num_channels, hidden_dim, kernel_size=1)
+        self.stem_proj = nn.Linear(backbone.num_channels, hidden_dim)
+        self.stem_norm = nn.LayerNorm(hidden_dim)
         self.transformer = transformer
-        self.vocab_embed = MLP(hidden_dim, hidden_dim, 2003, 3)
         self.aux_loss = aux_loss
 
     def forward(self, samples: NestedTensor, sequence):
@@ -59,17 +80,13 @@ class DETR(nn.Module):
         """
         if isinstance(samples, (list, torch.Tensor)):
             samples = nested_tensor_from_tensor_list(samples)
-        features, pos = self.backbone(samples)
-
+        features = self.backbone(samples)
+        features = list(features.values())
         src, mask = features[-1].decompose()
+        src = rearrange(src, "b c h w -> b (h w) c")
         assert mask is not None
-        hs = self.transformer(
-            self.input_proj(src), mask, None, pos[-1], sequence, self.vocab_embed
-        )
-        if self.training:
-            out = self.vocab_embed(hs[0])
-        else:
-            out = hs
+        src = self.stem_norm(self.stem_proj(self.dropout(src)))
+        out = self.transformer(src, mask, sequence)
         return out
 
     @torch.jit.unused
@@ -341,23 +358,6 @@ class PostProcess(nn.Module):
         return results
 
 
-class MLP(nn.Module):
-    """Very simple multi-layer perceptron (also called FFN)"""
-
-    def __init__(self, input_dim, hidden_dim, output_dim, num_layers):
-        super().__init__()
-        self.num_layers = num_layers
-        h = [hidden_dim] * (num_layers - 1)
-        self.layers = nn.ModuleList(
-            nn.Linear(n, k) for n, k in zip([input_dim] + h, h + [output_dim])
-        )
-
-    def forward(self, x):
-        for i, layer in enumerate(self.layers):
-            x = F.relu(layer(x)) if i < self.num_layers - 1 else layer(x)
-        return x
-
-
 def build(args):
     # the `num_classes` naming here is somewhat misleading.
     # it indeed corresponds to `max_obj_id + 1`, where max_obj_id
@@ -383,6 +383,7 @@ def build(args):
         transformer,
         num_classes=num_classes,
         num_queries=args.num_queries,
+        dropout=args.dropout,
         aux_loss=args.aux_loss,
     )
     if args.masks:
