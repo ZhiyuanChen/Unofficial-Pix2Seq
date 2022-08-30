@@ -8,7 +8,10 @@ from pathlib import Path
 
 import numpy as np
 import torch
+import torch.multiprocessing
 from torch.utils.data import DataLoader, DistributedSampler
+
+torch.multiprocessing.set_sharing_strategy("file_system")
 
 import datasets
 import util.misc as utils
@@ -142,7 +145,7 @@ def get_args_parser():
 
     # dataset parameters
     parser.add_argument("--dataset_file", default="coco")
-    parser.add_argument("--coco_path", type=str)
+    parser.add_argument("--coco_path", type=str, default="/data/coco/2017")
     parser.add_argument("--coco_panoptic_path", type=str)
     parser.add_argument("--remove_difficult", action="store_true")
 
