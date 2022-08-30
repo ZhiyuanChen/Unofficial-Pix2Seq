@@ -9,6 +9,7 @@ import sys
 from typing import Iterable
 
 import torch
+from tqdm import tqdm
 
 import util.misc as utils
 from datasets.coco_eval import CocoEvaluator
@@ -127,7 +128,7 @@ def evaluate(
             data_loader.dataset.ann_folder,
             output_dir=os.path.join(output_dir, "panoptic_eval"),
         )
-    for samples, targets in data_loader:
+    for samples, targets in tqdm(data_loader):
         samples = samples.to(device)
         targets = [{k: v.to(device) for k, v in t.items()} for t in targets]
         seq = torch.ones(len(targets), 1).to(samples.mask) * 2001
