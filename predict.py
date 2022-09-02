@@ -73,6 +73,12 @@ def get_args_parser():
         "--dropout", default=0.1, type=float, help="Dropout applied in the transformer"
     )
     parser.add_argument(
+        "--dropout_attn",
+        default=0.0,
+        type=float,
+        help="Dropout in attention",
+    )
+    parser.add_argument(
         "--nheads",
         default=8,
         type=int,
@@ -81,7 +87,12 @@ def get_args_parser():
     parser.add_argument(
         "--num_queries", default=100, type=int, help="Number of query slots"
     )
-    parser.add_argument("--pre_norm", action="store_true")
+    parser.add_argument("--vocab_size", default=3000, type=int, help="vocab size")
+    parser.add_argument("--max_seq_len", default=512, type=int, help="vocab size")
+    parser.add_argument("--pre_norm", action="store_true", default=True)
+    parser.add_argument("--shared_embed", action="store_true", default=True)
+    parser.add_argument("--output_bias", action="store_true", default=True)
+    parser.add_argument("--use_cls_token", action="store_true")
 
     # * Segmentation
     parser.add_argument(
@@ -129,7 +140,10 @@ def get_args_parser():
 
     # image input path
     parser.add_argument(
-        "--img_path", default="", type=str, help="path for the image to be detected"
+        "--img_path",
+        default="/data/coco/2017/val2017/000000000139.jpg",
+        type=str,
+        help="path for the image to be detected",
     )
     return parser
 

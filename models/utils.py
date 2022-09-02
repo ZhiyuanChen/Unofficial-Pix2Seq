@@ -35,7 +35,7 @@ def top_logits(
     return logits
 
 
-def sampling_callback(next_logits, step, temperature, top_k, top_p):
+def sample(next_logits, step, temperature, top_k, top_p):
     sampling_logits = next_logits / temperature
     sampling_logits = top_logits(sampling_logits, k=top_k, p=top_p)
-    return torch.multinomial(sampling_logits, num_samples=1).squeeze()
+    return torch.multinomial(sampling_logits, num_samples=1).squeeze(1)

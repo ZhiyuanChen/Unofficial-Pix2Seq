@@ -18,7 +18,7 @@ from einops import rearrange
 from torch import Tensor
 
 from .position_encoding import build_position_encoding
-from .utils import sampling_callback
+from .utils import sample
 
 
 class Transformer(nn.Module):
@@ -214,15 +214,18 @@ class TransformerDecoder(nn.Module):
         temperature=1.0,
         top_k=1,
         top_p=1.0,
-        sampling_callback=sampling_callback,
+        sampling_callback=sample,
     ):
         bsz, prompt_len = prompt.shape
         seq_len = self.max_seq_len if max_seq_len is None else max_seq_len
-        # Each step reads caches[:step] and tokens[step:next_step] and updates
-        # tokens[next_step], logits[next_step] and caches[step:next_step].
-        # On the first step, step=0, next_step=prompt_len. On subsequent steps
-        # next_step = step + 1.
+
         def step(steps, caches, tokens, logits, is_prompt=False):
+            """
+            Each step reads caches[:step] and tokens[step:next_step] and updates
+            tokens[next_step], logits[next_step] and caches[step:next_step].
+            On the first step, step=0, next_step=prompt_len. On subsequent steps
+            next_step = step + 1.
+            """
             if is_prompt:
                 assert steps == 0
                 x = self.input_embed[tokens[:prompt_len].T]
@@ -238,7 +241,7 @@ class TransformerDecoder(nn.Module):
             output, caches_out = self.decoder(x, encoded, caches_in, self_mask)
             if self.norm is not None:
                 output = self.norm(output)
-            next_logits = (output @ self.output_embed.T).squeeze()
+            next_logits = (output @ self.output_embed.T).squeeze(1)
             if self.output_bias is not None:
                 next_logits = next_logits + self.output_bias
 
