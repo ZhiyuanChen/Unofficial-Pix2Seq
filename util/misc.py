@@ -10,6 +10,7 @@ import pickle
 import subprocess
 import time
 from collections import defaultdict, deque
+from collections.abc import Mapping, Sequence
 from typing import List, Optional
 
 import torch
@@ -287,10 +288,71 @@ def get_sha():
     return message
 
 
+# def collate_fn(batch):
+#     images, labels = list(zip(*batch))
+#     images = nested_tensor_from_tensor_list(images)
+#     labels = torch.utils.data.default_collate(labels)
+#     return images, labels
+
+
 def collate_fn(batch):
-    batch = list(zip(*batch))
-    batch[0] = nested_tensor_from_tensor_list(batch[0])
-    return tuple(batch)
+    elem = batch[0]
+    elem_type = type(elem)
+    if isinstance(elem, torch.Tensor):
+        out = None
+        try:
+            if torch.utils.data.get_worker_info() is not None:
+                # If we're in a background process, concatenate directly into a
+                # shared memory tensor to avoid an extra copy
+                numel = sum(x.numel() for x in batch)
+                storage = elem.storage()._new_shared(numel, device=elem.device)
+                out = elem.new(storage).resize_(len(batch), *list(elem.size()))
+            return torch.stack(batch, 0, out=out)
+        except RuntimeError:
+            return nested_tensor_from_tensor_list(batch)
+    elif (
+        elem_type.__module__ == "numpy"
+        and elem_type.__name__ != "str_"
+        and elem_type.__name__ != "string_"
+    ):
+        if elem_type.__name__ == "ndarray" or elem_type.__name__ == "memmap":
+            return collate_fn([torch.as_tensor(b) for b in batch])
+        elif elem.shape == ():  # scalars
+            return torch.as_tensor(batch)
+    elif isinstance(elem, float):
+        return torch.tensor(batch, dtype=torch.float64)
+    elif isinstance(elem, int):
+        return torch.tensor(batch)
+    elif isinstance(elem, str):
+        return batch
+    elif isinstance(elem, Mapping):
+        try:
+            return elem_type({key: collate_fn([d[key] for d in batch]) for key in elem})
+        except TypeError:
+            # The mapping type may not support `__init__(iterable)`.
+            return {key: collate_fn([d[key] for d in batch]) for key in elem}
+    elif isinstance(elem, tuple) and hasattr(elem, "_fields"):  # namedtuple
+        return elem_type(*(collate_fn(samples) for samples in zip(*batch)))
+    elif isinstance(elem, Sequence):
+        # check to make sure that the elements in batch have consistent size
+        it = iter(batch)
+        elem_size = len(next(it))
+        if not all(len(elem) == elem_size for elem in it):
+            raise RuntimeError("each element in list of batch should be of equal size")
+        transposed = list(zip(*batch))  # It may be accessed twice, so we use a list.
+
+        if isinstance(elem, tuple):
+            return [
+                collate_fn(samples) for samples in transposed
+            ]  # Backwards compatibility.
+        else:
+            try:
+                return elem_type([collate_fn(samples) for samples in transposed])
+            except TypeError:
+                # The sequence type may not support `__init__(iterable)` (e.g., `range`).
+                return [collate_fn(samples) for samples in transposed]
+
+    raise TypeError(elem_type)
 
 
 def _max_by_axis(the_list):
@@ -303,23 +365,28 @@ def _max_by_axis(the_list):
 
 
 class NestedTensor(object):
-    def __init__(self, tensors, mask: Optional[Tensor]):
+    def __init__(self, tensors, mask: Optional[Tensor] = None):
         self.tensors = tensors
         self.mask = mask
 
     def to(self, device):
-        # type: (Device) -> NestedTensor # noqa
-        cast_tensor = self.tensors.to(device)
-        mask = self.mask
-        if mask is not None:
-            assert mask is not None
-            cast_mask = mask.to(device)
-        else:
-            cast_mask = None
-        return NestedTensor(cast_tensor, cast_mask)
+        # type: (Device) -> NestedTensors # noqa
+        tensor = (
+            self.tensors.to(device)
+            if hasattr(self.tensors, "to")
+            else [i.to(device) for i in self.tensors]
+        )
+        mask = self.mask.to(device) if self.mask is not None else None
+        return NestedTensor(tensor, mask)
 
     def decompose(self):
         return self.tensors, self.mask
+
+    def __iter__(self):
+        return iter(self.tensors)
+
+    def __len__(self):
+        return len(self.tensors)
 
     def __repr__(self):
         return str(self.tensors)
@@ -345,9 +412,9 @@ def nested_tensor_from_tensor_list(tensor_list: List[Tensor]):
         for img, pad_img, m in zip(tensor_list, tensor, mask):
             pad_img[: img.shape[0], : img.shape[1], : img.shape[2]].copy_(img)
             m[: img.shape[1], : img.shape[2]] = False
-    else:
-        raise ValueError("not supported")
     return NestedTensor(tensor, mask)
+    else:
+        return NestedTensor(tensor_list)
 
 
 # _onnx_nested_tensor_from_tensor_list() is an implementation of
