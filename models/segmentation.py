@@ -30,7 +30,7 @@ class DETRsegm(nn.Module):
             for p in self.parameters():
                 p.requires_grad_(False)
 
-        hidden_dim, nheads = detr.transformer.d_model, detr.transformer.nhead
+        hidden_dim, nheads = detr.transformer.embed_dim, detr.transformer.nhead
         self.bbox_attention = MHAttentionMap(
             hidden_dim, hidden_dim, nheads, dropout=0.0
         )

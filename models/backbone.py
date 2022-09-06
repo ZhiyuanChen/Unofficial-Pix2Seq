@@ -108,9 +108,10 @@ class Backbone(BackboneBase):
     def __init__(
         self,
         name: str,
-        train_backbone: bool,
+        training: bool,
         return_interm_layers: bool,
         dilation: bool,
+        **kwargs
     ):
         backbone = getattr(torchvision.models, name)(
             replace_stride_with_dilation=[False, False, dilation],
@@ -118,10 +119,8 @@ class Backbone(BackboneBase):
             norm_layer=FrozenBatchNorm2d,
         )
         num_channels = 512 if name in ("resnet18", "resnet34") else 2048
-        super().__init__(backbone, train_backbone, num_channels, return_interm_layers)
+        super().__init__(backbone, training, num_channels, return_interm_layers)
 
 
-def build_backbone(args):
-    train_backbone = args.lr_backbone > 0
-    return_interm_layers = args.masks
-    return Backbone(args.backbone, train_backbone, return_interm_layers, args.dilation)
+def build_backbone(config):
+    return Backbone(return_interm_layers=config.masks, **config.model.backbone)

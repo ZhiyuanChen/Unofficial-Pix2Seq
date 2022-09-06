@@ -24,69 +24,34 @@ from .utils import sample
 class Transformer(nn.Module):
     def __init__(
         self,
-        d_model=512,
-        nhead=8,
-        num_encoder_layers=6,
-        num_decoder_layers=6,
-        dim_feedforward=2048,
-        dropout=0.1,
-        dropout_attn=0.0,
-        activation="relu",
-        normalize_before=True,
-        return_intermediate_dec=False,
-        dec_proj_mode="mlp",
-        use_cls_token=True,
-        args=None,
+        encoder,
+        decoder,
     ):
         super().__init__()
-        self.dec_proj_mode = dec_proj_mode
-        self.use_cls_token = use_cls_token
-        encoder_layer = TransformerEncoderLayer(
-            d_model,
-            nhead,
-            dim_feedforward,
-            dropout,
-            dropout_attn,
-            activation,
-            normalize_before,
-        )
-        encoder_norm = nn.LayerNorm(d_model) if normalize_before else None
+        self.use_cls_token = encoder.use_cls_token
+        self.dec_proj_mode = decoder.proj_mode
+        self.embed_dim = encoder.embed_dim
+        encoder_layer = TransformerEncoderLayer(**encoder)
+        encoder_norm = nn.LayerNorm(encoder.embed_dim) if encoder.norm_first else None
         # encoder_norm = None
         self.encoder = TransformerEncoder(
-            encoder_layer, num_encoder_layers, encoder_norm, use_cls_token, args
+            layer=encoder_layer, norm=encoder_norm, **encoder
         )
 
-        self.proj = nn.Linear(d_model, d_model)
-        self.proj_norm = nn.LayerNorm(d_model)
+        self.proj = nn.Linear(encoder.embed_dim, decoder.embed_dim)
+        self.proj_norm = nn.LayerNorm(decoder.embed_dim)
         if self.dec_proj_mode in ("linear_p", "mlp"):
-            self.pos_embed = build_position_encoding(args)
+            self.pos_embed = build_position_encoding(**encoder)
             if self.dec_proj_mode == "mlp":
-                self.proj_mlp = FullyConnectedNetwork(
-                    d_model, dim_feedforward, dropout, activation, normalize_before
-                )
+                self.proj_mlp = FullyConnectedNetwork(**decoder)
 
-        decoder_layer = TransformerDecoderLayer(
-            d_model,
-            nhead,
-            dim_feedforward,
-            dropout,
-            dropout_attn,
-            activation,
-            normalize_before,
-        )
-        decoder_norm = nn.LayerNorm(d_model) if normalize_before else None
+        decoder_layer = TransformerDecoderLayer(**decoder)
+        decoder_norm = nn.LayerNorm(decoder.embed_dim) if decoder.norm_first else None
         self.decoder = TransformerDecoder(
-            decoder_layer,
-            num_decoder_layers,
-            decoder_norm,
-            return_intermediate_dec,
-            args,
+            layer=decoder_layer, norm=decoder_norm, **decoder
         )
 
         self._reset_parameters()
-
-        self.d_model = d_model
-        self.nhead = nhead
 
     def _reset_parameters(self):
         for p in self.parameters():
@@ -125,19 +90,21 @@ def generate_square_subsequent_mask(sz):
 class TransformerEncoder(nn.Module):
     def __init__(
         self,
-        encoder_layer,
+        layer,
         num_layers,
         norm,
         use_cls_token,
-        args,
+        embed_dim,
+        pos_embed,
+        **kwargs,
     ):
         super().__init__()
-        self.layers = _get_clones(encoder_layer, num_layers)
+        self.layers = _get_clones(layer, num_layers)
         self.num_layers = num_layers
         self.norm = norm
-        self.pos_embed = build_position_encoding(args)
+        self.pos_embed = build_position_encoding(pos_embed, embed_dim)
         self.cls_token = (
-            nn.Parameter(torch.randn(1, 1, encoder_layer.dim_model))
+            nn.Parameter(torch.randn(1, 1, embed_dim))
             if use_cls_token
             else None
         )
@@ -169,31 +136,29 @@ class TransformerEncoder(nn.Module):
 
 
 class TransformerDecoder(nn.Module):
-    def __init__(self, decoder_layer, num_layers, norm, return_intermediate, args):
+    def __init__(self, layer, num_layers, norm, return_intermediate, shared_embed, output_bias, vocab_size, embed_dim, max_seq_len, **kwargs):
         super().__init__()
-        self.layers = _get_clones(decoder_layer, num_layers)
+        self.layers = _get_clones(layer, num_layers)
         self.num_layers = num_layers
         self.norm = norm
         self.return_intermediate = return_intermediate
-        self.vocab_size, self.hidden_dim, self.max_seq_len = (
-            args.vocab_size,
-            args.hidden_dim,
-            args.max_seq_len,
-        )
-        self.pos_embed = nn.Parameter(torch.randn(self.max_seq_len, self.hidden_dim))
-        if args.shared_embed:
+        self.vocab_size = vocab_size
+        self.embed_dim = embed_dim
+        self.max_seq_len = max_seq_len
+        self.pos_embed = nn.Parameter(torch.randn(self.max_seq_len, self.embed_dim))
+        if shared_embed:
             self.input_embed = self.output_embed = nn.Parameter(
-                torch.randn(self.vocab_size, self.hidden_dim)
+                torch.randn(self.vocab_size, self.embed_dim)
             )
         else:
             self.input_embed = nn.Parameter(
-                torch.randn(self.vocab_size, self.hidden_dim)
+                torch.randn(self.vocab_size, self.embed_dim)
             )
             self.output_embed = nn.Parameter(
-                torch.randn(self.vocab_size, self.hidden_dim)
+                torch.randn(self.vocab_size, self.embed_dim)
             )
         self.output_bias = (
-            nn.Parameter(torch.Tensor(self.vocab_size)) if args.output_bias else None
+            nn.Parameter(torch.Tensor(self.vocab_size)) if output_bias else None
         )
 
     def fit(self, encoded, seq):
@@ -262,7 +227,7 @@ class TransformerDecoder(nn.Module):
             )
             return (next_step, caches, tokens, logits)
 
-        caches_var = torch.zeros(seq_len - 1, self.num_layers, bsz, self.hidden_dim).to(
+        caches_var = torch.zeros(seq_len - 1, self.num_layers, bsz, self.embed_dim).to(
             encoded.device
         )
         tokens_var = torch.zeros(seq_len, bsz, dtype=torch.int64).to(encoded.device)
@@ -313,22 +278,23 @@ class TransformerDecoder(nn.Module):
 class TransformerEncoderLayer(nn.Module):
     def __init__(
         self,
-        d_model,
-        nhead,
-        dim_feedforward=2048,
+        embed_dim,
+        num_heads,
+        ffn_dim=2048,
         dropout=0.1,
         dropout_attn=0.0,
         activation="gelu",
-        normalize_before=False,
+        norm_first=False,
+        **kwargs
     ):
         super().__init__()
-        self.normalize_before = normalize_before
-        self.self_norm = nn.LayerNorm(d_model)
+        self.norm_first = norm_first
+        self.self_norm = nn.LayerNorm(embed_dim)
         self.self_attn = nn.MultiheadAttention(
-            d_model, nhead, dropout=dropout_attn, batch_first=True
+            embed_dim, num_heads, dropout=dropout_attn, batch_first=True
         )
         self.mlp = FullyConnectedNetwork(
-            d_model, dim_feedforward, dropout, activation, normalize_before
+            embed_dim, ffn_dim, dropout, activation, norm_first
         )
 
     def forward(
@@ -338,7 +304,7 @@ class TransformerEncoderLayer(nn.Module):
         src_key_padding_mask: Optional[Tensor] = None,
     ):
         output = src
-        if self.normalize_before:
+        if self.norm_first:
             output = self.self_norm(output)
         attn = self.self_attn(
             output,
@@ -348,7 +314,7 @@ class TransformerEncoderLayer(nn.Module):
             key_padding_mask=src_key_padding_mask,
         )[0]
         output = src + attn
-        if not self.normalize_before:
+        if not self.norm_first:
             output = self.self_norm(output)
         output = self.mlp(output)
         return src
@@ -357,26 +323,27 @@ class TransformerEncoderLayer(nn.Module):
 class TransformerDecoderLayer(nn.Module):
     def __init__(
         self,
-        d_model,
-        nhead,
-        dim_feedforward=2048,
+        embed_dim,
+        num_heads,
+        ffn_dim=2048,
         dropout=0.1,
         dropout_attn=0.0,
         activation="gelu",
-        normalize_before=False,
+        norm_first=False,
+        **kwargs
     ):
         super().__init__()
-        self.normalize_before = normalize_before
-        self.self_norm = nn.LayerNorm(d_model)
+        self.norm_first = norm_first
+        self.self_norm = nn.LayerNorm(embed_dim)
         self.self_attn = nn.MultiheadAttention(
-            d_model, nhead, dropout=dropout_attn, batch_first=True
+            embed_dim, num_heads, dropout=dropout_attn, batch_first=True
         )
-        self.cross_norm = nn.LayerNorm(d_model)
+        self.cross_norm = nn.LayerNorm(embed_dim)
         self.cross_attn = nn.MultiheadAttention(
-            d_model, nhead, dropout=dropout_attn, batch_first=True
+            embed_dim, num_heads, dropout=dropout_attn, batch_first=True
         )
         self.mlp = FullyConnectedNetwork(
-            d_model, dim_feedforward, dropout, activation, normalize_before
+            embed_dim, ffn_dim, dropout, activation, norm_first
         )
 
     def forward(
@@ -390,7 +357,7 @@ class TransformerDecoderLayer(nn.Module):
         cross_key_padding_mask: Optional[Tensor] = None,
     ):
         output = tgt
-        if self.normalize_before:
+        if self.norm_first:
             output = self.self_norm(tgt)
         x_for_cache = kv = output
         if cache is not None:  # Augment kv_ln with cache in (bsz, c_size, d).
@@ -409,7 +376,7 @@ class TransformerDecoderLayer(nn.Module):
         )[0]
         output = tgt + attn
         output = (
-            self.cross_norm(output) if self.normalize_before else self.self_norm(output)
+            self.cross_norm(output) if self.norm_first else self.self_norm(output)
         )
         attn = self.cross_attn(
             query=output,
@@ -419,26 +386,26 @@ class TransformerDecoderLayer(nn.Module):
             key_padding_mask=cross_key_padding_mask,
         )[0]
         output = output + attn
-        if not self.normalize_before:
+        if not self.norm_first:
             output = self.cross_norm(output)
         output = self.mlp(output)
         return output, x_for_cache
 
 
 class FullyConnectedNetwork(nn.Module):
-    def __init__(self, d_model, d_mlp, dropout, activation, normalize_before) -> None:
+    def __init__(self, embed_dim, ffn_dim, dropout, activation, norm_first, **kwargs) -> None:
         super().__init__()
-        self.normalize_before = normalize_before
-        self.norm = nn.LayerNorm(d_model)
-        self.linear1 = nn.Linear(d_model, d_mlp)
+        self.norm_first = norm_first
+        self.norm = nn.LayerNorm(embed_dim)
+        self.linear1 = nn.Linear(embed_dim, ffn_dim)
         self.activation = _get_activation_fn(activation)
         self.dropout = nn.Dropout(dropout)
-        self.linear2 = nn.Linear(d_mlp, d_model)
+        self.linear2 = nn.Linear(ffn_dim, embed_dim)
 
     def forward(self, x):
         return (
             x + self.linear2(self.dropout(self.activation(self.linear1(self.norm(x)))))
-            if self.normalize_before
+            if self.norm_first
             else self.norm(
                 x + self.linear2(self.dropout(self.activation(self.linear1(x))))
             )
@@ -449,19 +416,9 @@ def _get_clones(module, n):
     return nn.ModuleList([copy.deepcopy(module) for _ in range(n)])
 
 
-def build_transformer(args):
+def build_transformer(config):
     return Transformer(
-        d_model=args.hidden_dim,
-        dropout=args.dropout,
-        dropout_attn=args.dropout_attn,
-        nhead=args.nheads,
-        dim_feedforward=args.dim_feedforward,
-        num_encoder_layers=args.enc_layers,
-        num_decoder_layers=args.dec_layers,
-        normalize_before=args.pre_norm,
-        return_intermediate_dec=True,
-        use_cls_token=args.use_cls_token,
-        args=args,
+        **config.model.transformer
     )
 
 

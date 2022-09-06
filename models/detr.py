@@ -54,7 +54,7 @@ class DETR(nn.Module):
         """
         super().__init__()
         self.num_queries = num_queries
-        hidden_dim = transformer.d_model
+        hidden_dim = transformer.embed_dim
         self.backbone = backbone
         self.dropout = nn.Dropout(dropout)
         # self.stem_proj = nn.Conv2d(backbone.num_channels, hidden_dim, kernel_size=1)
@@ -358,7 +358,7 @@ class PostProcess(nn.Module):
         return results
 
 
-def build(args):
+def build(config):
     # the `num_classes` naming here is somewhat misleading.
     # it indeed corresponds to `max_obj_id + 1`, where max_obj_id
     # is the maximum id for a class in your dataset. For example,
@@ -367,48 +367,48 @@ def build(args):
     # you should pass `num_classes` to be 2 (max_obj_id + 1).
     # For more details on this, check the following discussion
     # https://github.com/facebookresearch/detr/issues/108#issuecomment-650269223
-    num_classes = 20 if args.dataset_file != "coco" else 91
-    if args.dataset_file == "coco_panoptic":
+    num_classes = 20 if config.dataset.file != "coco" else 91
+    if config.dataset.file == "coco_panoptic":
         # for panoptic, we just add a num_classes that is large enough to hold
         # max_obj_id + 1, but the exact value doesn't really matter
         num_classes = 250
-    device = torch.device(args.device)
+    device = torch.device(config.device)
 
-    backbone = build_backbone(args)
+    backbone = build_backbone(config)
 
-    transformer = build_transformer(args)
+    transformer = build_transformer(config)
 
     model = DETR(
         backbone,
         transformer,
         num_classes=num_classes,
-        num_queries=args.num_queries,
-        dropout=args.dropout,
-        aux_loss=args.aux_loss,
+        num_queries=config.model.transformer.decoder.num_queries,
+        dropout=config.model.dropout,
+        aux_loss=config.aux_loss,
     )
-    if args.masks:
-        model = DETRsegm(model, freeze_detr=(args.frozen_weights is not None))
-    matcher = build_matcher(args)
+    if config.masks:
+        model = DETRsegm(model, freeze_detr=(config.model.frozen_weights))
+    matcher = build_matcher(config)
     weight_dict = {"at": 1}
-    if args.masks:
-        weight_dict["loss_mask"] = args.mask_loss_coef
-        weight_dict["loss_dice"] = args.dice_loss_coef
+    if config.masks:
+        weight_dict["loss_mask"] = config.mask_loss_coef
+        weight_dict["loss_dice"] = config.dice_loss_coef
     # TODO this is a hack
-    if args.aux_loss:
+    if config.aux_loss:
         aux_weight_dict = {}
-        for i in range(args.dec_layers - 1):
+        for i in range(config.model.transformer.decoder.num_layers - 1):
             aux_weight_dict.update({k + f"_{i}": v for k, v in weight_dict.items()})
         weight_dict.update(aux_weight_dict)
 
     losses = ["labels", "boxes", "cardinality"]
-    if args.masks:
+    if config.masks:
         losses += ["masks"]
     criterion = torch.nn.CrossEntropyLoss()
     criterion.to(device)
     postprocessors = {"bbox": PostProcess()}
-    if args.masks:
+    if config.masks:
         postprocessors["segm"] = PostProcessSegm()
-        if args.dataset_file == "coco_panoptic":
+        if config.dataset.file == "coco_panoptic":
             is_thing_map = {i: i <= 90 for i in range(201)}
             postprocessors["panoptic"] = PostProcessPanoptic(
                 is_thing_map, threshold=0.85

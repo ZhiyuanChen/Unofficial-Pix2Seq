@@ -9,6 +9,7 @@ import sys
 from typing import Iterable
 
 import torch
+from torch import Tensor
 from tqdm import tqdm
 
 import util.misc as utils
@@ -34,9 +35,10 @@ def train_one_epoch(
     print_freq = 10
     for samples, targets in metric_logger.log_every(data_loader, print_freq, header):
         # (x1 y1 x2 y2 label) * max_box + EOS
-        max_seq_len = max([len(target["boxes"]) for target in targets]) * 5 + 1
+        max_seq_len = max([len(box) for box in targets["boxes"]]) * 5 + 1
         samples = samples.to(device)
-        targets = [{k: v.to(device) for k, v in t.items()} for t in targets]
+        # consider use accelerate to avoid manual device assignment
+        targets = {k: v.to(device) for k, v in targets.items()}
         bins = 1000
         num_box = 100
         box_labels = []

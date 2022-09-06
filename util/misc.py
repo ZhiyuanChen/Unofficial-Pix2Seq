@@ -412,7 +412,7 @@ def nested_tensor_from_tensor_list(tensor_list: List[Tensor]):
         for img, pad_img, m in zip(tensor_list, tensor, mask):
             pad_img[: img.shape[0], : img.shape[1], : img.shape[2]].copy_(img)
             m[: img.shape[1], : img.shape[2]] = False
-    return NestedTensor(tensor, mask)
+        return NestedTensor(tensor, mask)
     else:
         return NestedTensor(tensor_list)
 
@@ -499,34 +499,35 @@ def save_on_master(*args, **kwargs):
         torch.save(*args, **kwargs)
 
 
-def init_distributed_mode(args):
+def init_distributed_mode(config):
     if "RANK" in os.environ and "WORLD_SIZE" in os.environ:
-        args.rank = int(os.environ["RANK"])
-        args.world_size = int(os.environ["WORLD_SIZE"])
-        args.gpu = int(os.environ["LOCAL_RANK"])
+        config.rank = int(os.environ["RANK"])
+        config.world_size = int(os.environ["WORLD_SIZE"])
+        config.gpu = int(os.environ["LOCAL_RANK"])
     elif "SLURM_PROCID" in os.environ:
-        args.rank = int(os.environ["SLURM_PROCID"])
-        args.gpu = args.rank % torch.cuda.device_count()
+        config.rank = int(os.environ["SLURM_PROCID"])
+        config.gpu = config.rank % torch.cuda.device_count()
     else:
         print("Not using distributed mode")
-        args.distributed = False
+        config.distributed = False
         return
 
-    args.distributed = True
+    config.distributed = True
 
-    torch.cuda.set_device(args.gpu)
-    args.dist_backend = "nccl"
+    torch.cuda.set_device(config.gpu)
+    config.dist_backend = "nccl"
     print(
-        "| distributed init (rank {}): {}".format(args.rank, args.dist_url), flush=True
+        "| distributed init (rank {}): {}".format(config.rank, config.dist_url),
+        flush=True,
     )
     torch.distributed.init_process_group(
-        backend=args.dist_backend,
-        init_method=args.dist_url,
-        world_size=args.world_size,
-        rank=args.rank,
+        backend=config.dist_backend,
+        init_method=config.dist_url,
+        world_size=config.world_size,
+        rank=config.rank,
     )
     torch.distributed.barrier()
-    setup_for_distributed(args.rank == 0)
+    setup_for_distributed(config.rank == 0)
 
 
 @torch.no_grad()

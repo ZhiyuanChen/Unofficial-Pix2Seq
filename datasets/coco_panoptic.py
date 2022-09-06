@@ -90,9 +90,9 @@ class CocoPanoptic:
         return height, width
 
 
-def build(image_set, args):
-    img_folder_root = Path(args.coco_path)
-    ann_folder_root = Path(args.coco_panoptic_path)
+def build(image_set, config):
+    img_folder_root = Path(config.dataset.path)
+    ann_folder_root = Path(config.dataset.panoptic_path)
     assert (
         img_folder_root.exists()
     ), f"provided COCO path {img_folder_root} does not exist"
@@ -115,7 +115,7 @@ def build(image_set, args):
         ann_folder,
         ann_file,
         transforms=make_coco_transforms(image_set),
-        return_masks=args.masks,
+        return_masks=config.masks,
     )
 
     return dataset
