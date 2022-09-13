@@ -10,9 +10,9 @@ import torch
 from PIL import Image, ImageDraw, ImageFont
 
 import datasets.transforms as T
+from configs import PredictConfig
 from models import build_model
 from util import box_ops
-from configs import PredictConfig
 
 
 LABEL_MAP = {

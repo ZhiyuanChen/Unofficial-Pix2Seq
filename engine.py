@@ -25,7 +25,7 @@ def train_one_epoch(
     optimizer: torch.optim.Optimizer,
     device: torch.device,
     epoch: int,
-    max_norm: float = 0,
+    config
 ):
     model.train()
     criterion.train()
@@ -34,10 +34,8 @@ def train_one_epoch(
     header = "Epoch: [{}]".format(epoch)
     print_freq = 10
     for samples, targets in metric_logger.log_every(data_loader, print_freq, header):
-        # (x1 y1 x2 y2 label) * max_box + EOS
-        max_seq_len = max([len(box) for box in targets["boxes"]]) * 5 + 1
-        samples = samples.to(device)
         # consider use accelerate to avoid manual device assignment
+        samples = samples.to(device)
         targets = {k: v.to(device) for k, v in targets.items()}
         bins = 1000
         num_box = 100
@@ -92,8 +90,8 @@ def train_one_epoch(
 
         optimizer.zero_grad()
         losses.backward()
-        if max_norm > 0:
-            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm)
+        if config.max_norm > 0:
+            torch.nn.utils.clip_grad_norm_(model.parameters(), config.max_norm)
         optimizer.step()
 
         metric_logger.update(
@@ -108,7 +106,7 @@ def train_one_epoch(
 
 @torch.no_grad()
 def evaluate(
-    model, criterion, postprocessors, data_loader, base_ds, device, output_dir
+    model, criterion, postprocessors, data_loader, base_ds, device, config
 ):
     model.eval()
     criterion.eval()
@@ -128,12 +126,12 @@ def evaluate(
         panoptic_evaluator = PanopticEvaluator(
             data_loader.dataset.ann_file,
             data_loader.dataset.ann_folder,
-            output_dir=os.path.join(output_dir, "panoptic_eval"),
+            output_dir=os.path.join(config.output_dir, "panoptic_eval"),
         )
     for samples, targets in tqdm(data_loader):
+        # consider use accelerate to avoid manual device assignment
         samples = samples.to(device)
-        targets = [{k: v.to(device) for k, v in t.items()} for t in targets]
-        seq = torch.ones(len(targets), 1).to(samples.mask) * 2001
+        targets = {k: v.to(device) for k, v in targets.items()}
         outputs = model(samples, seq)
         batch_index = 0
         results = []

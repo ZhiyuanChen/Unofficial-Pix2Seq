@@ -135,7 +135,7 @@ def main(config):
             data_loader_val,
             base_ds,
             device,
-            config.output_dir,
+            config,
         )
         if config.output_dir:
             utils.save_on_master(
@@ -155,7 +155,7 @@ def main(config):
             optimizer,
             device,
             epoch,
-            config.clip_max_norm,
+            config,
         )
         lr_scheduler.step()
         if config.output_dir:

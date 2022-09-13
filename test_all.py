@@ -12,7 +12,7 @@ from models.matcher import HungarianMatcher
 from models.position_encoding import (PositionEmbeddingLearned,
                                       PositionEmbeddingSine)
 from util import box_ops
-from util.misc import nested_tensor_from_tensor_list
+from util.misc import NestedTensor
 
 # onnxruntime requires python 3.5 or above
 try:
@@ -90,7 +90,7 @@ class Tester(unittest.TestCase):
     def test_model_script_detection(self):
         model = detr_resnet50(pretrained=False).eval()
         scripted_model = torch.jit.script(model)
-        x = nested_tensor_from_tensor_list(
+        x = NestedTensor(
             [torch.rand(3, 200, 200), torch.rand(3, 200, 250)]
         )
         out = model(x)
@@ -101,7 +101,7 @@ class Tester(unittest.TestCase):
     def test_model_script_panoptic(self):
         model = detr_resnet50_panoptic(pretrained=False).eval()
         scripted_model = torch.jit.script(model)
-        x = nested_tensor_from_tensor_list(
+        x = NestedTensor(
             [torch.rand(3, 200, 200), torch.rand(3, 200, 250)]
         )
         out = model(x)
@@ -113,7 +113,7 @@ class Tester(unittest.TestCase):
     def test_model_detection_different_inputs(self):
         model = detr_resnet50(pretrained=False).eval()
         # support NestedTensor
-        x = nested_tensor_from_tensor_list(
+        x = NestedTensor(
             [torch.rand(3, 200, 200), torch.rand(3, 200, 250)]
         )
         out = model(x)
@@ -134,7 +134,7 @@ class Tester(unittest.TestCase):
                 self.model = model
 
             def forward(self, inputs: List[Tensor]):
-                sample = nested_tensor_from_tensor_list(inputs)
+                sample = NestedTensor(inputs)
                 return self.model(sample)
 
         model = detr_resnet50(pretrained=False)
@@ -184,7 +184,7 @@ class ONNXExporterTester(unittest.TestCase):
                 if isinstance(test_inputs, torch.Tensor) or isinstance(
                     test_inputs, list
                 ):
-                    test_inputs = (nested_tensor_from_tensor_list(test_inputs),)
+                    test_inputs = (NestedTensor(test_inputs),)
                 test_ouputs = model(*test_inputs)
                 if isinstance(test_ouputs, torch.Tensor):
                     test_ouputs = (test_ouputs,)

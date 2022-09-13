@@ -13,7 +13,7 @@ from PIL import Image
 from torch import Tensor
 
 import util.box_ops as box_ops
-from util.misc import NestedTensor, interpolate, nested_tensor_from_tensor_list
+from util.misc import NestedTensor, interpolate, NestedTensor
 
 try:
     from panopticapi.utils import id2rgb, rgb2id
@@ -40,10 +40,10 @@ class DETRsegm(nn.Module):
 
     def forward(self, samples: NestedTensor):
         if isinstance(samples, (list, torch.Tensor)):
-            samples = nested_tensor_from_tensor_list(samples)
+            samples = NestedTensor(samples)
         features, pos = self.detr.backbone(samples)
 
-        bs = features[-1].tensors.shape[0]
+        bs = features[-1].tensor.shape[0]
 
         src, mask = features[-1].decompose()
         assert mask is not None
@@ -64,7 +64,7 @@ class DETRsegm(nn.Module):
         seg_masks = self.mask_head(
             src_proj,
             bbox_mask,
-            [features[2].tensors, features[1].tensors, features[0].tensors],
+            [features[2].tensor, features[1].tensor, features[0].tensor],
         )
         outputs_seg_masks = seg_masks.view(
             bs, self.detr.num_queries, seg_masks.shape[-2], seg_masks.shape[-1]

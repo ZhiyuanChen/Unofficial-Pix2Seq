@@ -16,7 +16,7 @@ from util.misc import (
     get_world_size,
     interpolate,
     is_dist_avail_and_initialized,
-    nested_tensor_from_tensor_list,
+    NestedTensor,
 )
 
 from .backbone import build_backbone
@@ -79,7 +79,7 @@ class DETR(nn.Module):
                             dictionnaries containing the two above keys for each decoder layer.
         """
         if isinstance(samples, (list, torch.Tensor)):
-            samples = nested_tensor_from_tensor_list(samples)
+            samples = NestedTensor(samples)
         features = self.backbone(samples)
         features = list(features.values())
         src, mask = features[-1].decompose()
@@ -209,7 +209,7 @@ class SetCriterion(nn.Module):
         src_masks = src_masks[src_idx]
         masks = [t["masks"] for t in targets]
         # TODO use valid to mask invalid areas due to padding in loss
-        target_masks, valid = nested_tensor_from_tensor_list(masks).decompose()
+        target_masks, valid = NestedTensor(masks).decompose()
         target_masks = target_masks.to(src_masks)
         target_masks = target_masks[tgt_idx]
 
