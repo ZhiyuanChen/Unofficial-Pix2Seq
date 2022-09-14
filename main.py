@@ -14,10 +14,10 @@ torch.multiprocessing.set_sharing_strategy("file_system")
 
 import datasets
 import util.misc as utils
+from configs import TuneConfig
 from datasets import build_dataset, get_coco_api_from_dataset
 from engine import evaluate, train_one_epoch
 from models import build_model
-from configs import TuneConfig
 
 
 def main(config):
@@ -41,7 +41,9 @@ def main(config):
 
     model_without_ddp = model
     if config.distributed:
-        model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[config.gpu])
+        model = torch.nn.parallel.DistributedDataParallel(
+            model, device_ids=[config.gpu]
+        )
         model_without_ddp = model.module
     n_parameters = sum(p.numel() for p in model.parameters() if p.requires_grad)
     print("number of params:", n_parameters)

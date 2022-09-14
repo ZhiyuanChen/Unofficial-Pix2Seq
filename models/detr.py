@@ -79,7 +79,7 @@ class DETR(nn.Module):
                             dictionnaries containing the two above keys for each decoder layer.
         """
         if isinstance(samples, (list, torch.Tensor)):
-            samples = NestedTensor(samples)
+            samples = NestedTensor.from_tensor_list(samples)
         features = self.backbone(samples)
         features = list(features.values())
         src, mask = features[-1].decompose()
@@ -209,7 +209,7 @@ class SetCriterion(nn.Module):
         src_masks = src_masks[src_idx]
         masks = [t["masks"] for t in targets]
         # TODO use valid to mask invalid areas due to padding in loss
-        target_masks, valid = NestedTensor(masks).decompose()
+        target_masks, valid = NestedTensor.from_tensor_list(masks).decompose()
         target_masks = target_masks.to(src_masks)
         target_masks = target_masks[tgt_idx]
 

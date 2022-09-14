@@ -25,11 +25,11 @@ def top_logits(
         min_logits = torch.topk(logits, k=k)[0][:, -1:]
         logits = torch.where(logits < min_logits, mask, logits)
     if p < 1.0:
-        sorted_logits = logits.sort(descending=True)
-        cum_probs = torch.cumsum(sorted_logits.softmax(), axis=-1)
+        sorted_logits = logits.sort(descending=True)[0]
+        cum_probs = torch.cumsum(sorted_logits.softmax(-1), axis=-1)
         min_logits = -torch.max(
             torch.where(cum_probs <= p, -sorted_logits, mask), -1, keepdims=True
-        )
+        )[0]
         min_logits = torch.minimum(min_logits, sorted_logits[:, :1])
         logits = torch.where(logits < min_logits, mask, logits)
     return logits
@@ -38,4 +38,4 @@ def top_logits(
 def sample(next_logits, step, temperature, top_k, top_p):
     sampling_logits = next_logits / temperature
     sampling_logits = top_logits(sampling_logits, k=top_k, p=top_p)
-    return torch.multinomial(sampling_logits, num_samples=1).squeeze(1)
+    return torch.multinomial(sampling_logits.softmax(-1), num_samples=1).squeeze(1)

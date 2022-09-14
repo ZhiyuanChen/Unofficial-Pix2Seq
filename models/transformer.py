@@ -104,9 +104,7 @@ class TransformerEncoder(nn.Module):
         self.norm = norm
         self.pos_embed = build_position_encoding(pos_embed, embed_dim)
         self.cls_token = (
-            nn.Parameter(torch.randn(1, 1, embed_dim))
-            if use_cls_token
-            else None
+            nn.Parameter(torch.randn(1, 1, embed_dim)) if use_cls_token else None
         )
 
     def forward(
@@ -136,7 +134,22 @@ class TransformerEncoder(nn.Module):
 
 
 class TransformerDecoder(nn.Module):
-    def __init__(self, layer, num_layers, norm, return_intermediate, shared_embed, output_bias, vocab_size, embed_dim, max_seq_len, **kwargs):
+    def __init__(
+        self,
+        layer,
+        num_layers,
+        norm,
+        return_intermediate,
+        shared_embed,
+        output_bias,
+        vocab_size,
+        embed_dim,
+        max_seq_len,
+        temperature,
+        top_k,
+        top_p,
+        **kwargs,
+    ):
         super().__init__()
         self.layers = _get_clones(layer, num_layers)
         self.num_layers = num_layers
@@ -145,6 +158,9 @@ class TransformerDecoder(nn.Module):
         self.vocab_size = vocab_size
         self.embed_dim = embed_dim
         self.max_seq_len = max_seq_len
+        self.temperature = temperature
+        self.top_k = top_k
+        self.top_p = top_p
         self.pos_embed = nn.Parameter(torch.randn(self.max_seq_len, self.embed_dim))
         if shared_embed:
             self.input_embed = self.output_embed = nn.Parameter(
@@ -175,11 +191,8 @@ class TransformerDecoder(nn.Module):
         self,
         encoded,
         prompt,
-        max_seq_len=None,
-        temperature=1.0,
-        top_k=1,
-        top_p=1.0,
         sampling_callback=sample,
+        max_seq_len=None,
     ):
         bsz, prompt_len = prompt.shape
         seq_len = self.max_seq_len if max_seq_len is None else max_seq_len
@@ -212,7 +225,7 @@ class TransformerDecoder(nn.Module):
 
             # Scale and trunctate logits and sample next token.
             next_token = sampling_callback(
-                next_logits, steps, temperature, top_k, top_p
+                next_logits, steps, self.temperature, self.top_k, self.top_p
             )
 
             # Update internal states.
@@ -285,7 +298,7 @@ class TransformerEncoderLayer(nn.Module):
         dropout_attn=0.0,
         activation="gelu",
         norm_first=False,
-        **kwargs
+        **kwargs,
     ):
         super().__init__()
         self.norm_first = norm_first
@@ -330,7 +343,7 @@ class TransformerDecoderLayer(nn.Module):
         dropout_attn=0.0,
         activation="gelu",
         norm_first=False,
-        **kwargs
+        **kwargs,
     ):
         super().__init__()
         self.norm_first = norm_first
@@ -375,9 +388,7 @@ class TransformerDecoderLayer(nn.Module):
             key_padding_mask=self_key_padding_mask,
         )[0]
         output = tgt + attn
-        output = (
-            self.cross_norm(output) if self.norm_first else self.self_norm(output)
-        )
+        output = self.cross_norm(output) if self.norm_first else self.self_norm(output)
         attn = self.cross_attn(
             query=output,
             key=memory,
@@ -393,7 +404,9 @@ class TransformerDecoderLayer(nn.Module):
 
 
 class FullyConnectedNetwork(nn.Module):
-    def __init__(self, embed_dim, ffn_dim, dropout, activation, norm_first, **kwargs) -> None:
+    def __init__(
+        self, embed_dim, ffn_dim, dropout, activation, norm_first, **kwargs
+    ) -> None:
         super().__init__()
         self.norm_first = norm_first
         self.norm = nn.LayerNorm(embed_dim)
@@ -417,9 +430,7 @@ def _get_clones(module, n):
 
 
 def build_transformer(config):
-    return Transformer(
-        **config.model.transformer
-    )
+    return Transformer(**config.model.transformer)
 
 
 def _get_activation_fn(activation):

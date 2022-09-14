@@ -310,7 +310,7 @@ def collate_fn(batch):
                 out = elem.new(storage).resize_(len(batch), *list(elem.size()))
             return torch.stack(batch, 0, out=out)
         except RuntimeError:
-            return NestedTensor(batch)
+            return NestedTensor.from_tensor_list(batch)
     elif (
         elem_type.__module__ == "numpy"
         and elem_type.__name__ != "str_"
@@ -366,7 +366,12 @@ def _max_by_axis(batch):
 
 
 class NestedTensor(object):
-    def __init__(self, batch: List[Tensor]):
+    def __init__(self, tensor, mask):
+        self.tensor = tensor
+        self.mask = mask
+
+    @classmethod
+    def from_tensor_list(self, batch: List[Tensor]):
         elem = batch[0]
         ndim, dtype, device = elem.ndim, elem.dtype, elem.device
         # if torchvision._is_tracing():
@@ -389,11 +394,7 @@ class NestedTensor(object):
             mask = torch.zeros(mask_shape, dtype=torch.bool, device=device)
             tensors.append(F.pad(elem, pad, "constant", 0))
             masks.append(F.pad(mask, pad, "constant", 1))
-        try:
-            self.tensor = torch.stack(tensors)
-            self.mask = torch.stack(masks)
-        except:
-            __import__("ipdb").set_trace()
+        return NestedTensor(torch.stack(tensors), torch.stack(masks))
 
     def to(self, device):
         # type: (torch.device) -> NestedTensor # noqa
